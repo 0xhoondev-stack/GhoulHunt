@@ -1,167 +1,323 @@
-local ok, Rayfield = pcall(function() return loadstring(game:HttpGet('https://sirius.menu/rayfield'))() end)
-if not ok or not Rayfield then return end
-local Window = Rayfield:CreateWindow({Name="Ghoul Capture",LoadingTitle="Loading",LoadingSubtitle="Short Version",Theme="Default",ConfigurationSaving={Enabled=false},KeySystem=false})
-local Main = Window:CreateTab("메인",4483362458)
-local Target = Window:CreateTab("타겟팅",4483362458)
-local Time = Window:CreateTab("탭 시간",4483362458)
+-- Ghoul Auto Capture | 공중 부양 & 완벽한 유령 추적
 
-local RS, Players, UIS, VIM = game:GetService("ReplicatedStorage"), game:GetService("Players"), game:GetService("UserInputService"), game:GetService("VirtualInputManager")
-local LP, Cam, Mouse = Players.LocalPlayer, workspace.CurrentCamera, Players.LocalPlayer:GetMouse()
-local F, T, G, Eq, Begin, Complete, Folder
-local Auto, Current, Align = false, nil, nil
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+if not success or not Rayfield then warn("Rayfield 로드 실패") return end
 
-local S = {
-    Model = "All", TapInt = 0.12, Dist = 2.5,
-    G1 = 7.0, G2 = 10.0, G3 = 15.0, G4 = 20.0, G5 = 25.0, Def = 10.0, High = true
+local Window = Rayfield:CreateWindow({
+   Name = "Ghoul Auto Capture",
+   LoadingTitle = "Ghoul Auto Capture",
+   LoadingSubtitle = "Fly & No Clip",
+   Theme = "Default",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false
+})
+
+local MainTab = Window:CreateTab("메인", 4483362458)
+local TargetTab = Window:CreateTab("타겟팅", 4483362458)
+local TimeTab = Window:CreateTab("탭 시간 설정", 4483362458)
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+local Framework, ToolService, GhoulHuntingService, Equip, BeginCapture, CompleteCapture, GhoulsFolder
+local isMobile = UserInputService.TouchEnabled
+local AutoEnabled = false
+local CurrentTarget = nil
+local AlignPos = nil
+
+local Settings = {
+    TargetModel = "All",
+    MobileTapInterval = 0.12,
+    TeleportDistance = 2.5,
+    Ghoul1Time = 7.0, Ghoul2Time = 10.0, Ghoul3Time = 15.0, Ghoul4Time = 20.0, Ghoul5Time = 25.0,
+    DefaultTime = 10.0,
+    PrioritizeHighTier = true
 }
 
-pcall(function()
-    F = RS:WaitForChild("Aurora"):WaitForChild("Framework")
-    T = F:WaitForChild("Services"):WaitForChild("ToolService")
-    G = F:WaitForChild("Services"):WaitForChild("GhoulHuntingService")
-    Eq = T:WaitForChild("RF"):WaitForChild("Equip")
-    Begin = G:WaitForChild("RF"):WaitForChild("BeginCapture")
-    Complete = G:WaitForChild("RF"):WaitForChild("CompleteCapture")
-end)
-Folder = workspace:FindFirstChild("Persistent") and workspace.Persistent:FindFirstChild("Ghouls") and workspace.Persistent.Ghouls:FindFirstChild("Active") or workspace:FindFirstChild("Ghouls")
+local function init()
+    pcall(function()
+        Framework = ReplicatedStorage:WaitForChild("Aurora"):WaitForChild("Framework")
+        ToolService = Framework:WaitForChild("Services"):WaitForChild("ToolService")
+        GhoulHuntingService = Framework:WaitForChild("Services"):WaitForChild("GhoulHuntingService")
+        Equip = ToolService:WaitForChild("RF"):WaitForChild("Equip")
+        BeginCapture = GhoulHuntingService:WaitForChild("RF"):WaitForChild("BeginCapture")
+        CompleteCapture = GhoulHuntingService:WaitForChild("RF"):WaitForChild("CompleteCapture")
+    end)
+    GhoulsFolder = workspace:FindFirstChild("Persistent") and workspace.Persistent:FindFirstChild("Ghouls") and workspace.Persistent.Ghouls:FindFirstChild("Active")
+    if not GhoulsFolder then GhoulsFolder = workspace:FindFirstChild("Ghouls") end
+end
+init()
 
-local function equip()
-    if Eq then pcall(function() Eq:InvokeServer("9e29c08b-1cb6-46c5-9458-6fb10bb625e1") end) task.wait(0.1) pcall(function() Eq:InvokeServer("Bat Cannon") end) end
+local function forceEquip()
+    local toolId = "9e29c08b-1cb6-46c5-9458-6fb10bb625e1"
+    local toolName = "Bat Cannon"
+    if Equip then
+        pcall(function() Equip:InvokeServer(toolId) end)
+        task.wait(0.1)
+        pcall(function() Equip:InvokeServer(toolName) end)
+    end
+    local character = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if character and backpack then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local tool = backpack:FindFirstChild(toolName) or backpack:FindFirstChildOfClass("Tool")
+            if tool then humanoid:EquipTool(tool) end
+        end
+    end
 end
 
-local function getGhoul()
-    if not Folder then return nil end
-    local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-    local pr = {"Ghoul5","Ghoul4","Ghoul3","Ghoul2","Ghoul1"}
-    local function check(g)
-        local p = g:FindFirstChildWhichIsA("BasePart") or g.PrimaryPart
-        return p and p.Position.Y > -150
-    end
-    if S.High and S.Model == "All" then
-        for _, m in ipairs(pr) do
-            local best, dist = nil, math.huge
-            for _, g in ipairs(Folder:GetChildren()) do
-                if g:IsA("Model") and check(g) and (g:GetAttribute("GhoulModel") or g.Name) == m then
-                    local d = (g.PrimaryPart.Position - root.Position).Magnitude
-                    if d < dist then dist, best = d, g end
+-- 높은 등급 우선 탐색
+function getClosestGhoul()
+    if not GhoulsFolder then init() return nil end
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = character.HumanoidRootPart
+    local priorityModels = {"Ghoul5", "Ghoul4", "Ghoul3", "Ghoul2", "Ghoul1"}
+
+    if Settings.PrioritizeHighTier and Settings.TargetModel == "All" then
+        for _, modelName in ipairs(priorityModels) do
+            local tierClosest, tierShortest = nil, math.huge
+            for _, ghoul in ipairs(GhoulsFolder:GetChildren()) do
+                if ghoul:IsA("Model") then
+                    local part = ghoul.PrimaryPart or ghoul:FindFirstChildWhichIsA("BasePart")
+                    if part and part.Position.Y > -150 then
+                        local gModel = ghoul:GetAttribute("GhoulModel") or ghoul.Name
+                        if gModel == modelName then
+                            local dist = (part.Position - root.Position).Magnitude
+                            if dist < tierShortest then
+                                tierShortest = dist
+                                tierClosest = ghoul
+                            end
+                        end
+                    end
                 end
             end
-            if best then return best end
+            if tierClosest then return tierClosest end
         end
     else
-        local best, dist = nil, math.huge
-        for _, g in ipairs(Folder:GetChildren()) do
-            if g:IsA("Model") and check(g) then
-                local gm = g:GetAttribute("GhoulModel") or g.Name
-                if S.Model == "All" or gm == S.Model then
-                    local d = (g.PrimaryPart.Position - root.Position).Magnitude
-                    if d < dist then dist, best = d, g end
+        local closest, shortest = nil, math.huge
+        for _, ghoul in ipairs(GhoulsFolder:GetChildren()) do
+            if ghoul:IsA("Model") then
+                local part = ghoul.PrimaryPart or ghoul:FindFirstChildWhichIsA("BasePart")
+                if part and part.Position.Y > -150 then
+                    local gModel = ghoul:GetAttribute("GhoulModel") or ghoul.Name
+                    if Settings.TargetModel == "All" or gModel == Settings.TargetModel then
+                        local dist = (part.Position - root.Position).Magnitude
+                        if dist < shortest then
+                            shortest = dist
+                            closest = ghoul
+                        end
+                    end
                 end
             end
         end
-        return best
+        return closest
     end
+    return nil
 end
 
-local function magnet(t)
-    local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+-- ★ [핵심] 공중 부양 자석 (AlignPosition 튜닝)
+local function startMagnet(target)
+    local character = LocalPlayer.Character
+    if not character then return end
+    local root = character:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    if Align then Align:Destroy() end
-    Align = Instance.new("AlignPosition", root)
-    Align.Attachment0 = root:FindFirstChildWhichIsA("Attachment") or Instance.new("Attachment", root)
-    Align.Mode = Enum.PositionAlignmentMode.OneAttachment
-    Align.MaxForce, Align.Responsiveness = math.huge, 100
+    
+    if AlignPos then AlignPos:Destroy() end
+    
+    AlignPos = Instance.new("AlignPosition")
+    AlignPos.Parent = root
+    AlignPos.Attachment0 = root:FindFirstChildWhichIsA("Attachment") or Instance.new("Attachment", root)
+    AlignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
+    AlignPos.MaxForce = math.huge
+    -- ★ Responsiveness를 100으로 높여서 공중에서도 정확하게 목표물에 붙게 함
+    AlignPos.Responsiveness = 100 
+    
     task.spawn(function()
-        while Align and Auto and Current and Current.Parent do
-            local p = Current.PrimaryPart or Current:FindFirstChildWhichIsA("BasePart")
-            if p then
-                local off = p.CFrame.LookVector * -S.Dist
-                Align.Position = Vector3.new(p.Position.X + off.X, p.Position.Y + 1, p.Position.Z + off.Z)
+        while AlignPos and AlignPos.Parent and AutoEnabled and CurrentTarget and CurrentTarget.Parent do
+            local part = CurrentTarget.PrimaryPart or CurrentTarget:FindFirstChildWhichIsA("BasePart")
+            if part then
+                local offset = part.CFrame.LookVector * -Settings.TeleportDistance
+                local targetPos = part.Position + offset
+                -- ★ 3D 좌표(높이 포함)를 완벽하게 따라가서 공중에 뜬 상태로 유지
+                AlignPos.Position = Vector3.new(targetPos.X, part.Position.Y + 1, targetPos.Z)
             end
             task.wait(0.05)
         end
-        if Align then Align:Destroy() end
+        if AlignPos then AlignPos:Destroy() end
     end)
 end
 
+local function stopMagnet()
+    if AlignPos then
+        AlignPos:Destroy()
+        AlignPos = nil
+    end
+end
+
+-- ★ [핵심] 물리 엔진 분리 (중력 끄고 공중 부양)
 task.spawn(function()
     while task.wait(0.1) do
-        if Auto and LP.Character then
-            local h = LP.Character:FindFirstChildOfClass("Humanoid")
-            if h then h.PlatformStand = true end
-            for _, v in ipairs(LP.Character:GetDescendants()) do
-                if v:IsA("BasePart") then v.CanCollide = false end
+        if AutoEnabled then
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    -- ★ PlatformStand로 중력 무시 (공중 부양)
+                    humanoid.PlatformStand = true 
+                end
+                -- ★ 모든 충돌 무시
+                for _, v in ipairs(character:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        v.CanCollide = false
+                    end
+                end
             end
         end
     end
 end)
 
+-- 마우스 추적 루프
 task.spawn(function()
     while task.wait(0.01) do
-        if Auto and Current and Current.Parent then
-            local p = Current.PrimaryPart or Current:FindFirstChildWhichIsA("BasePart")
-            if p then
-                local sp, on = Cam:WorldToViewportPoint(p.Position + Vector3.new(0, p.Size.Y/2, 0))
-                if on then Mouse.X, Mouse.Y = sp.X, sp.Y end
+        if AutoEnabled and CurrentTarget and CurrentTarget.Parent then
+            local part = CurrentTarget.PrimaryPart or CurrentTarget:FindFirstChildWhichIsA("BasePart")
+            if part then
+                local aimPos = part.Position + Vector3.new(0, part.Size.Y / 2, 0)
+                local sp, onScreen = Camera:WorldToViewportPoint(aimPos)
+                if onScreen then 
+                    Mouse.X = sp.X 
+                    Mouse.Y = sp.Y 
+                end
             end
         end
     end
 end)
 
-local function capture(t)
-    if not t or not t.Parent then return end
-    Current = t
-    magnet(t)
-    task.wait(0.3)
-    if Begin then pcall(function() Begin:InvokeServer(t, "Hold") end) end
-    task.wait(0.1)
-    local gm = t:GetAttribute("GhoulModel") or "Unknown"
-    local tm = S.Def
-    if gm == "Ghoul1" then tm = S.G1 elseif gm == "Ghoul2" then tm = S.G2 elseif gm == "Ghoul3" then tm = S.G3 elseif gm == "Ghoul4" then tm = S.G4 elseif gm == "Ghoul5" then tm = S.G5 end
-    local st = tick()
-    while tick() - st < tm and Auto do
-        if not t.Parent then break end
-        VIM:SendMouseButtonEvent(Mouse.X, Mouse.Y, 0, true, game, 1)
-        task.wait(0.02)
-        VIM:SendMouseButtonEvent(Mouse.X, Mouse.Y, 0, false, game, 1)
-        task.wait(S.TapInt)
-    end
-    if Complete then pcall(function() Complete:InvokeServer(t) end) end
-    if Align then Align:Destroy() end
-    Current = nil
+local function doTap()
+    VirtualInputManager:SendMouseButtonEvent(Mouse.X, Mouse.Y, 0, true, game, 1)
+    task.wait(0.02)
+    VirtualInputManager:SendMouseButtonEvent(Mouse.X, Mouse.Y, 0, false, game, 1)
 end
 
-local function loop()
+local function captureGhoul(target)
+    if not target or not target.Parent then return false end
+    CurrentTarget = target
+    
+    startMagnet(target)
+    task.wait(0.3)
+
+    if BeginCapture then
+        local ok = pcall(function() BeginCapture:InvokeServer(target, "Hold") end)
+        if not ok then 
+            stopMagnet()
+            CurrentTarget = nil 
+            return false 
+        end
+    end
+    task.wait(0.1)
+
+    local gModel = target:GetAttribute("GhoulModel") or "Unknown"
+    local targetTime = Settings.DefaultTime
+    if gModel == "Ghoul1" then targetTime = Settings.Ghoul1Time
+    elseif gModel == "Ghoul2" then targetTime = Settings.Ghoul2Time
+    elseif gModel == "Ghoul3" then targetTime = Settings.Ghoul3Time
+    elseif gModel == "Ghoul4" then targetTime = Settings.Ghoul4Time
+    elseif gModel == "Ghoul5" then targetTime = Settings.Ghoul5Time
+    end
+
+    print(string.format("=== [%s] 포획 시작 (%.1f초) ===", gModel, targetTime))
+
+    local start = tick()
+    while tick() - start < targetTime and AutoEnabled do
+        if not target.Parent then break end
+        doTap()
+        task.wait(Settings.MobileTapInterval)
+    end
+
+    if CompleteCapture then pcall(function() CompleteCapture:InvokeServer(target) end) end
+    
+    stopMagnet()
+    CurrentTarget = nil
+    task.wait(0.1)
+    return true
+end
+
+local function autoLoop()
     task.spawn(function()
-        equip()
+        forceEquip()
         task.wait(0.3)
-        while Auto do
-            local t = getGhoul()
-            if t then capture(t) else task.wait(0.5) end
+        while AutoEnabled do
+            pcall(function()
+                local target = getClosestGhoul()
+                if target then 
+                    captureGhoul(target) 
+                else
+                    task.wait(0.5)
+                end
+            end)
         end
     end)
 end
 
-Main:CreateToggle({Name="자동 포획 ON/OFF",CurrentValue=false,Callback=function(v)
-    Auto = v
-    if v then loop() else
-        local c = LP.Character
-        if c then
-            local h = c:FindFirstChildOfClass("Humanoid")
-            if h then h.PlatformStand = false end
-            for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end
-        end
-    end
-end})
-Main:CreateButton({Name="툴 강제 장착",Callback=equip})
-Main:CreateToggle({Name="높은 등급 우선 (Ghoul5->1)",CurrentValue=true,Callback=function(v) S.High = v end})
-Target:CreateDropdown({Name="타겟 모델",Options={"All","Ghoul1","Ghoul2","Ghoul3","Ghoul4","Ghoul5"},CurrentOption={"All"},Callback=function(o) S.Model = o[1] end})
-Time:CreateSlider({Name="Ghoul1 탭 시간",Range={1,20},Increment=1,CurrentValue=7,Callback=function(v) S.G1 = v end})
-Time:CreateSlider({Name="Ghoul2 탭 시간",Range={1,25},Increment=1,CurrentValue=10,Callback=function(v) S.G2 = v end})
-Time:CreateSlider({Name="Ghoul3 탭 시간",Range={1,30},Increment=1,CurrentValue=15,Callback=function(v) S.G3 = v end})
-Time:CreateSlider({Name="Ghoul4 탭 시간",Range={1,40},Increment=1,CurrentValue=20,Callback=function(v) S.G4 = v end})
-Time:CreateSlider({Name="Ghoul5 탭 시간",Range={1,50},Increment=1,CurrentValue=25,Callback=function(v) S.G5 = v end})
-Time:CreateSlider({Name="탭 간격",Range={0.05,0.3},Increment=0.01,CurrentValue=0.12,Callback=function(v) S.TapInt = v end})
-Time:CreateSlider({Name="텔레포트 거리",Range={2,4.5},Increment=0.1,CurrentValue=2.5,Callback=function(v) S.Dist = v end})
-Rayfield:Notify({Title="로드 완료",Content="공중부양 활성화",Duration=5})
+------------------------------------------------
+-- UI 구성
+------------------------------------------------
+MainTab:CreateToggle({
+   Name = "자동 포획 ON/OFF (공중부양)",
+   CurrentValue = false,
+   Callback = function(Value) 
+       AutoEnabled = Value 
+       if Value then 
+           autoLoop() 
+       else
+           -- 토글 끄면 중력 및 충돌 복구
+           local character = LocalPlayer.Character
+           if character then
+               local humanoid = character:FindFirstChildOfClass("Humanoid")
+               if humanoid then humanoid.PlatformStand = false end
+               for _, v in ipairs(character:GetDescendants()) do
+                   if v:IsA("BasePart") then v.CanCollide = true end
+               end
+           end
+       end
+   end,
+})
+
+MainTab:CreateButton({
+   Name = "툴 강제 장착",
+   Callback = function() forceEquip() end,
+})
+
+MainTab:CreateToggle({
+    Name = "높은 등급 우선 탐색 (Ghoul5 -> 1)",
+    CurrentValue = true,
+    Callback = function(Value) Settings.PrioritizeHighTier = Value end,
+})
+
+TargetTab:CreateDropdown({
+    Name = "타겟 Ghoul 모델 선택",
+    Options = {"All", "Ghoul1", "Ghoul2", "Ghoul3", "Ghoul4", "Ghoul5"},
+    CurrentOption = {"All"},
+    MultipleOptions = false,
+    Callback = function(option) Settings.TargetModel = option[1] end,
+})
+
+TimeTab:CreateSlider({ Name = "Ghoul1 탭 시간", Range = {1, 20}, Increment = 1, CurrentValue = 7, Callback = function(v) Settings.Ghoul1Time = v end })
+TimeTab:CreateSlider({ Name = "Ghoul2 탭 시간", Range = {1, 25}, Increment = 1, CurrentValue = 10, Callback = function(v) Settings.Ghoul2Time = v end })
+TimeTab:CreateSlider({ Name = "Ghoul3 탭 시간", Range = {1, 30}, Increment = 1, CurrentValue = 15, Callback = function(v) Settings.Ghoul3Time = v end })
+TimeTab:CreateSlider({ Name = "Ghoul4 탭 시간", Range = {1, 40}, Increment = 1, CurrentValue = 20, Callback = function(v) Settings.Ghoul4Time = v end })
+TimeTab:CreateSlider({ Name = "Ghoul5 탭 시간", Range = {1, 50}, Increment = 1, CurrentValue = 25, Callback = function(v) Settings.Ghoul5Time = v end })
+
+TimeTab:CreateSlider({ Name = "탭 간격 (초)", Range = {0.05, 0.3}, Increment = 0.01, CurrentValue = 0.12, Callback = function(v) Settings.MobileTapInterval = v end })
+TimeTab:CreateSlider({ Name = "텔레포트 거리", Range = {2, 4.5}, Increment = 0.1, CurrentValue = 2.5, Callback = function(v) Settings.TeleportDistance = v end })
+
+Rayfield:Notify({ Title = "로드 완료", Content = "공중 부양 & 유령 추적 활성화", Duration = 5 })

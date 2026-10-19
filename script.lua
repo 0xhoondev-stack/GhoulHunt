@@ -1,4 +1,4 @@
--- Ghoul Auto Capture | 공중 부양 & 완벽한 유령 추적
+-- Ghoul Auto Capture | 공중 부양 & 완벽한 유령 추적 (+ 20분 튕김 방지)
 
 local success, Rayfield = pcall(function()
     return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -8,7 +8,7 @@ if not success or not Rayfield then warn("Rayfield 로드 실패") return end
 local Window = Rayfield:CreateWindow({
    Name = "Ghoul Auto Capture",
    LoadingTitle = "Ghoul Auto Capture",
-   LoadingSubtitle = "Fly & No Clip",
+   LoadingSubtitle = "Fly & Anti-AFK",
    Theme = "Default",
    ConfigurationSaving = { Enabled = false },
    KeySystem = false
@@ -74,7 +74,6 @@ local function forceEquip()
     end
 end
 
--- 높은 등급 우선 탐색
 function getClosestGhoul()
     if not GhoulsFolder then init() return nil end
     local character = LocalPlayer.Character
@@ -124,7 +123,6 @@ function getClosestGhoul()
     return nil
 end
 
--- ★ [핵심] 공중 부양 자석 (AlignPosition 튜닝)
 local function startMagnet(target)
     local character = LocalPlayer.Character
     if not character then return end
@@ -138,7 +136,6 @@ local function startMagnet(target)
     AlignPos.Attachment0 = root:FindFirstChildWhichIsA("Attachment") or Instance.new("Attachment", root)
     AlignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
     AlignPos.MaxForce = math.huge
-    -- ★ Responsiveness를 100으로 높여서 공중에서도 정확하게 목표물에 붙게 함
     AlignPos.Responsiveness = 100 
     
     task.spawn(function()
@@ -147,7 +144,6 @@ local function startMagnet(target)
             if part then
                 local offset = part.CFrame.LookVector * -Settings.TeleportDistance
                 local targetPos = part.Position + offset
-                -- ★ 3D 좌표(높이 포함)를 완벽하게 따라가서 공중에 뜬 상태로 유지
                 AlignPos.Position = Vector3.new(targetPos.X, part.Position.Y + 1, targetPos.Z)
             end
             task.wait(0.05)
@@ -163,24 +159,38 @@ local function stopMagnet()
     end
 end
 
--- ★ [핵심] 물리 엔진 분리 (중력 끄고 공중 부양)
+-- 물리 엔진 분리 (공중 부양)
 task.spawn(function()
     while task.wait(0.1) do
         if AutoEnabled then
             local character = LocalPlayer.Character
             if character then
                 local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    -- ★ PlatformStand로 중력 무시 (공중 부양)
-                    humanoid.PlatformStand = true 
-                end
-                -- ★ 모든 충돌 무시
+                if humanoid then humanoid.PlatformStand = true end
                 for _, v in ipairs(character:GetDescendants()) do
-                    if v:IsA("BasePart") then
-                        v.CanCollide = false
-                    end
+                    if v:IsA("BasePart") then v.CanCollide = false end
                 end
             end
+        end
+    end
+end)
+
+-- ★ [추가] 20분 AFK 튕김 완벽 방지 시스템
+task.spawn(function()
+    while task.wait(60) do -- 1분마다 실행
+        if AutoEnabled then
+            local vu = game:GetService("VirtualUser")
+            -- 마우스 미세 이동 및 클릭 신호 전송 (잠수 판정 방지)
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new())
+            
+            -- 캐릭터 점프 강제 발생
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.Jump = true end
+            end
+            print("🛡️ AFK 방지: 가상 입력 전송 완료")
         end
     end
 end)
@@ -279,7 +289,6 @@ MainTab:CreateToggle({
        if Value then 
            autoLoop() 
        else
-           -- 토글 끄면 중력 및 충돌 복구
            local character = LocalPlayer.Character
            if character then
                local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -320,4 +329,4 @@ TimeTab:CreateSlider({ Name = "Ghoul5 탭 시간", Range = {1, 50}, Increment = 
 TimeTab:CreateSlider({ Name = "탭 간격 (초)", Range = {0.05, 0.3}, Increment = 0.01, CurrentValue = 0.12, Callback = function(v) Settings.MobileTapInterval = v end })
 TimeTab:CreateSlider({ Name = "텔레포트 거리", Range = {2, 4.5}, Increment = 0.1, CurrentValue = 2.5, Callback = function(v) Settings.TeleportDistance = v end })
 
-Rayfield:Notify({ Title = "로드 완료", Content = "공중 부양 & 유령 추적 활성화", Duration = 5 })
+Rayfield:Notify({ Title = "로드 완료", Content = "AFK 튕김 방지 & 공중 부양 활성화", Duration = 5 })

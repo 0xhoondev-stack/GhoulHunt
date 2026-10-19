@@ -160,12 +160,13 @@ local AutoStick = false
 
 local HighPriorityFirst = true
 
+-- ★★★ [수정] Ghoul5는 기본적으로 false로 설정하여 파밍하지 않음 ★★★
 local GhoulEnabled = {
     ["Ghoul1"] = true,
     ["Ghoul2"] = true,
     ["Ghoul3"] = true,
     ["Ghoul4"] = true,
-    ["Ghoul5"] = true,
+    ["Ghoul5"] = false,  -- <-- Ghoul5 비활성화
 }
 
 local GhoulTapCounts = {
@@ -495,7 +496,6 @@ local AutoToggle
 
 AutoToggle = MainTab:CreateToggle({
    Name = "🎃 자동 포획 시작 / 정지 👻",
-   -- ★ 기본값을 true로 설정
    CurrentValue = true, 
    Flag = "AutoToggle",
    Callback = function(Value)
@@ -510,9 +510,8 @@ AutoToggle = MainTab:CreateToggle({
    end,
 })
 
--- ★★★ [추가] 스크립트가 실행되자마자 즉시 자동사냥 루프 시작 ★★★
 task.spawn(function()
-    task.wait(1) -- UI 로딩 대기
+    task.wait(1)
     if AutoEnabled then
         autoLoop()
         Rayfield:Notify({Title = "🎃 자동 시작", Content = "스크립트 로드와 동시에 자동 포획이 켜졌습니다.", Duration = 3})
@@ -530,20 +529,20 @@ MainTab:CreateLabel("• Y축 제한: -150")
 ------------------------------------------------
 TargetTab:CreateParagraph({
     Title = "👻 타겟 선택 방식",
-    Content = "아래 두 가지 방식으로 파밍할 Ghoul을 정할 수 있습니다.\n\n① '높은 순서부터 파밍' 스위치로 전체 순서 결정\n   (ON: 5→4→3→2→1 / OFF: 1→2→3→4→5)\n\n② Ghoul별 스위치로 파밍할 Ghoul만 개별 선택"
+    Content = "아래 두 가지 방식으로 파밍할 Ghoul을 정할 수 있습니다.\n\n① '높은 순서부터 파밍' 스위치로 전체 순서 결정\n   (ON: 4→3→2→1 / OFF: 1→2→3→4)\n\n② Ghoul별 스위치로 파밍할 Ghoul만 개별 선택"
 })
 
 TargetTab:CreateSection("🔢 파밍 순서")
 TargetTab:CreateToggle({
-   Name = "⬆️ 높은 순서부터 파밍 (Ghoul5 → Ghoul1)",
+   Name = "⬆️ 높은 순서부터 파밍 (Ghoul4 → Ghoul1)",
    CurrentValue = true,
    Flag = "HighPriorityFirst",
    Callback = function(Value)
        HighPriorityFirst = Value
        if Value then
-           print("파밍 순서: 높은 순서부터 (5→4→3→2→1)")
+           print("파밍 순서: 높은 순서부터 (4→3→2→1)")
        else
-           print("파밍 순서: 낮은 순서부터 (1→2→3→4→5)")
+           print("파밍 순서: 낮은 순서부터 (1→2→3→4)")
        end
    end,
 })
@@ -551,7 +550,7 @@ TargetTab:CreateToggle({
 TargetTab:CreateSection("👻 파밍할 Ghoul 선택")
 TargetTab:CreateToggle({
    Name = "Ghoul5 파밍",
-   CurrentValue = true,
+   CurrentValue = false, -- ★ 비활성화
    Flag = "Farm_Ghoul5",
    Callback = function(Value)
        GhoulEnabled["Ghoul5"] = Value

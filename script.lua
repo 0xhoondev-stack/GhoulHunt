@@ -29,7 +29,6 @@ end
 
 print("✅ Rayfield 로드 성공!")
 
--- 2. UI 창 생성
 local Window = Rayfield:CreateWindow({
    Name = "🎃 Ghoul Auto Capture 👻",
    LoadingTitle = "🕸️ Loading... 🕸️",
@@ -39,13 +38,14 @@ local Window = Rayfield:CreateWindow({
 })
 
 local MainTab = Window:CreateTab("🎃 메인", 4483362458)
-local PriorityTab = Window:CreateTab("👻 타겟 순서 설정", 4483362458)
-local TapCountTab = Window:CreateTab("🦇 탭 횟수 설정", 4483362458)
-local InfoTab = Window:CreateTab("👻 정보", 4483362458)
+local TargetTab = Window:CreateTab("👻 타겟 선택", 4483362458)
+local GhoulTab = Window:CreateTab("⚙️ Ghoul 설정", 4483362458)
+local InfoTab = Window:CreateTab("ℹ️ 정보", 4483362458)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
 
 -- 화면 상태 표시 UI
 local TapGui = Instance.new("ScreenGui")
@@ -67,6 +67,74 @@ UIStroke.Color = Color3.fromRGB(255, 100, 0)
 UIStroke.Thickness = 2
 UIStroke.Parent = TapLabel
 
+-- Ghoul 개수 실시간 표시 UI
+local CountGui = Instance.new("ScreenGui")
+CountGui.Parent = game.CoreGui
+CountGui.Name = "GhoulCountGui"
+
+local CountFrame = Instance.new("Frame")
+CountFrame.Parent = CountGui
+CountFrame.Size = UDim2.new(0, 220, 0, 200)
+CountFrame.Position = UDim2.new(0, 10, 0, 100)
+CountFrame.BackgroundColor3 = Color3.fromRGB(20, 15, 10)
+CountFrame.BackgroundTransparency = 0.2
+CountFrame.BorderSizePixel = 0
+
+local CountCorner = Instance.new("UICorner")
+CountCorner.CornerRadius = UDim.new(0, 8)
+CountCorner.Parent = CountFrame
+
+local CountStroke = Instance.new("UIStroke")
+CountStroke.Color = Color3.fromRGB(255, 100, 0)
+CountStroke.Thickness = 2
+CountStroke.Parent = CountFrame
+
+local CountTitle = Instance.new("TextLabel")
+CountTitle.Parent = CountFrame
+CountTitle.Size = UDim2.new(1, 0, 0, 30)
+CountTitle.BackgroundTransparency = 1
+CountTitle.Text = "👻 Ghoul 현황"
+CountTitle.TextColor3 = Color3.fromRGB(255, 200, 100)
+CountTitle.TextSize = 16
+CountTitle.Font = Enum.Font.SourceSansBold
+
+local CountList = Instance.new("Frame")
+CountList.Parent = CountFrame
+CountList.Size = UDim2.new(1, -20, 1, -40)
+CountList.Position = UDim2.new(0, 10, 0, 35)
+CountList.BackgroundTransparency = 1
+
+local CountLayout = Instance.new("UIListLayout")
+CountLayout.Parent = CountList
+CountLayout.Padding = UDim.new(0, 2)
+CountLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local CountLabels = {}
+
+for i = 5, 1, -1 do
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent = CountList
+    lbl.Size = UDim2.new(1, 0, 0, 26)
+    lbl.BackgroundTransparency = 0.7
+    lbl.BackgroundColor3 = Color3.fromRGB(40, 20, 10)
+    lbl.Text = string.format("Ghoul%d : 0", i)
+    lbl.TextColor3 = Color3.fromRGB(255, 150, 0)
+    lbl.TextSize = 15
+    lbl.Font = Enum.Font.SourceSansBold
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.LayoutOrder = 10 - i
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, 8)
+    pad.Parent = lbl
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = lbl
+
+    CountLabels["Ghoul" .. i] = lbl
+end
+
 -- 서버 경로
 local Framework, GhoulService, ToolService, RF, EquipRF
 local BeginCapture, TapCapture, CompleteCapture, GhoulsFolder
@@ -85,68 +153,152 @@ pcall(function()
     GhoulsFolder = workspace:WaitForChild("Persistent"):WaitForChild("Ghouls"):WaitForChild("Active")
 end)
 
-local AutoEnabled = false
+-- ★★★ [수정] 실행하자마자 자동사냥이 켜지도록 기본값 true로 설정 ★★★
+local AutoEnabled = true 
 local CurrentTarget = nil
 local AutoStick = false
 
--- ★ [핵심] 우선순위 초기값 (기본: Ghoul5 -> 4 -> 3 -> 2 -> 1)
-local TargetPriority = {"Ghoul5", "Ghoul4", "Ghoul3", "Ghoul2", "Ghoul1"}
+local HighPriorityFirst = true
 
--- ★ 탭 횟수
-local GhoulTapCounts = {
-    ["Ghoul1"] = 12, ["Ghoul2"] = 19, ["Ghoul3"] = 12, ["Ghoul4"] = 17, ["Ghoul5"] = 20,
+local GhoulEnabled = {
+    ["Ghoul1"] = true,
+    ["Ghoul2"] = true,
+    ["Ghoul3"] = true,
+    ["Ghoul4"] = true,
+    ["Ghoul5"] = true,
 }
 
--- ★ 고정값
+local GhoulTapCounts = {
+    ["Ghoul1"] = 12, ["Ghoul2"] = 20, ["Ghoul3"] = 15, ["Ghoul4"] = 20, ["Ghoul5"] = 20,
+}
+
+local GhoulTapIntervals = {
+    ["Ghoul1"] = 0.3, ["Ghoul2"] = 0.3, ["Ghoul3"] = 0.3, ["Ghoul4"] = 0.4, ["Ghoul5"] = 0.5,
+    Default = 0.5
+}
 local GhoulWaitTimes = {
-    ["Ghoul1"] = 0.25, ["Ghoul2"] = 0.25, ["Ghoul3"] = 0.25, ["Ghoul4"] = 0.25, ["Ghoul5"] = 0.25,
+    ["Ghoul1"] = 0.3, ["Ghoul2"] = 0.3, ["Ghoul3"] = 0.3, ["Ghoul4"] = 0.3, ["Ghoul5"] = 0.25,
     Default = 0.25
 }
-local TapInterval = 0.5
+
 local MinYPosition = -150
 
--- ★ [핵심 수정] 우선순위에 따라 유령 찾기 (디버깅 로그 추가)
+local function clampSpeed(val)
+    local num = tonumber(val)
+    if not num then return nil end
+    if num < 0.05 then num = 0.05 end
+    if num > 2.0 then num = 2.0 end
+    return num
+end
+
+local function countGhouls()
+    local counts = {
+        ["Ghoul1"] = 0, ["Ghoul2"] = 0, ["Ghoul3"] = 0, ["Ghoul4"] = 0, ["Ghoul5"] = 0,
+    }
+    if not GhoulsFolder then return counts end
+
+    for _, ghoul in ipairs(GhoulsFolder:GetChildren()) do
+        if ghoul:IsA("Model") and ghoul:GetAttribute("Captured") ~= true and ghoul:GetAttribute("BeingCaptured") ~= true then
+            local gModel = ghoul:GetAttribute("GhoulModel") or ghoul.Name
+            local part = ghoul.PrimaryPart or ghoul:FindFirstChild("Main")
+            if part and part.Position.Y > MinYPosition then
+                if counts[gModel] then
+                    counts[gModel] = counts[gModel] + 1
+                end
+            end
+        end
+    end
+
+    return counts
+end
+
+local function updateCountLabels()
+    local counts = countGhouls()
+    for name, lbl in pairs(CountLabels) do
+        local cnt = counts[name] or 0
+        lbl.Text = string.format("%s : %d", name, cnt)
+        if cnt > 0 then
+            lbl.TextColor3 = Color3.fromRGB(100, 255, 150)
+        else
+            lbl.TextColor3 = Color3.fromRGB(150, 100, 100)
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(updateCountLabels)
+    end
+end)
+
+local function getFarmOrder()
+    local enabledList = {}
+    for i = 1, 5 do
+        local name = "Ghoul" .. i
+        if GhoulEnabled[name] then
+            table.insert(enabledList, name)
+        end
+    end
+
+    if #enabledList == 0 then return {} end
+
+    if HighPriorityFirst then
+        table.sort(enabledList, function(a, b)
+            local numA = tonumber(a:match("%d+")) or 0
+            local numB = tonumber(b:match("%d+")) or 0
+            return numA > numB
+        end)
+    else
+        table.sort(enabledList, function(a, b)
+            local numA = tonumber(a:match("%d+")) or 0
+            local numB = tonumber(b:match("%d+")) or 0
+            return numA < numB
+        end)
+    end
+
+    return enabledList
+end
+
 local function getClosestGhoul()
     if not GhoulsFolder then return nil end
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
 
-    -- 1순위부터 순서대로 확인
-    for idx, targetModel in ipairs(TargetPriority) do
-        -- ★ nil이거나 빈 문자열이면 건너뜀
-        if targetModel and targetModel ~= "" then
-            local tierClosest, tierShortest = nil, math.huge
-            
-            for _, ghoul in ipairs(GhoulsFolder:GetChildren()) do
-                if ghoul:IsA("Model") and ghoul:GetAttribute("Captured") ~= true and ghoul:GetAttribute("BeingCaptured") ~= true then
-                    local gModel = ghoul:GetAttribute("GhoulModel") or ghoul.Name
-                    
-                    if gModel == targetModel then
-                        local part = ghoul.PrimaryPart or ghoul:FindFirstChild("Main")
-                        if part and part.Position.Y > MinYPosition then
-                            local dist = (part.Position - root.Position).Magnitude
-                            if dist < tierShortest then
-                                tierShortest = dist
-                                tierClosest = ghoul
-                            end
+    local farmOrder = getFarmOrder()
+    if #farmOrder == 0 then
+        return nil
+    end
+
+    for idx, targetModel in ipairs(farmOrder) do
+        local tierClosest, tierShortest = nil, math.huge
+        
+        for _, ghoul in ipairs(GhoulsFolder:GetChildren()) do
+            if ghoul:IsA("Model") and ghoul:GetAttribute("Captured") ~= true and ghoul:GetAttribute("BeingCaptured") ~= true then
+                local gModel = ghoul:GetAttribute("GhoulModel") or ghoul.Name
+                
+                if gModel == targetModel then
+                    local part = ghoul.PrimaryPart or ghoul:FindFirstChild("Main")
+                    if part and part.Position.Y > MinYPosition then
+                        local dist = (part.Position - root.Position).Magnitude
+                        if dist < tierShortest then
+                            tierShortest = dist
+                            tierClosest = ghoul
                         end
                     end
                 end
             end
-            
-            -- ★ 이 순위에서 유령을 찾았다면 즉시 반환
-            if tierClosest then 
-                print(string.format("✅ %d순위 타겟 발견: %s (거리: %.1f)", idx, targetModel, tierShortest))
-                return tierClosest 
-            else
-                print(string.format("❌ %d순위 타겟 없음: %s (다음 순위 탐색)", idx, targetModel))
-            end
+        end
+        
+        if tierClosest then 
+            print(string.format("✅ %d번째 우선순위 타겟 발견: %s (거리: %.1f)", idx, targetModel, tierShortest))
+            return tierClosest 
+        else
+            print(string.format("❌ %d번째 우선순위 타겟 없음: %s (다음 순위 탐색)", idx, targetModel))
         end
     end
     return nil
 end
 
--- 자석 시스템
 local function startPerfectStick(target)
     AutoStick = true
     local character = LocalPlayer.Character
@@ -156,44 +308,90 @@ local function startPerfectStick(target)
     local part = target.PrimaryPart or target:FindFirstChild("Main")
     if not root or not humanoid or not part then return end
 
-    local targetPos = part.Position + (part.CFrame.LookVector * -2)
-    root.CFrame = CFrame.lookAt(targetPos, part.Position)
-    root.AssemblyLinearVelocity = Vector3.zero
+    local function computeTargetPos()
+        local currentPart = target.PrimaryPart or target:FindFirstChild("Main")
+        if not currentPart then return nil end
+        return currentPart.Position + (currentPart.CFrame.LookVector * -1.5)
+    end
+
+    local initPos = computeTargetPos()
+    if initPos then
+        root.CFrame = CFrame.lookAt(initPos, part.Position)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+
+    pcall(function()
+        humanoid.PlatformStand = false
+        humanoid.AutoRotate = false
+    end)
 
     task.spawn(function()
         while AutoStick do
-            task.wait(0.01)
-            local currentRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local currentPart = target.PrimaryPart or target:FindFirstChild("Main")
-            local currentHumanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            task.wait()
             
-            if currentRoot and currentPart and currentHumanoid and target.Parent then
-                if currentHumanoid:GetState() == Enum.HumanoidStateType.Freefall or currentHumanoid:GetState() == Enum.HumanoidStateType.FallingDown then
-                    currentHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-                end
-                local targetPosition = currentPart.Position + (currentPart.CFrame.LookVector * -1.5)
-                local currentPos = currentRoot.Position
-                local newPos = currentPos:Lerp(Vector3.new(targetPosition.X, currentPos.Y, targetPosition.Z), 0.3)
-                currentRoot.CFrame = CFrame.lookAt(newPos, Vector3.new(currentPart.Position.X, currentPos.Y, currentPart.Position.Z))
-                currentRoot.AssemblyLinearVelocity = Vector3.zero
-                currentRoot.AssemblyAngularVelocity = Vector3.zero
-            else
+            if not AutoStick then break end
+
+            local char = LocalPlayer.Character
+            if not char then break end
+
+            local currentRoot = char:FindFirstChild("HumanoidRootPart")
+            local currentHumanoid = char:FindFirstChildOfClass("Humanoid")
+            local currentPart = target.PrimaryPart or target:FindFirstChild("Main")
+            
+            if not currentRoot or not currentHumanoid or not currentPart or not target.Parent then
                 break
             end
+
+            local state = currentHumanoid:GetState()
+            if state == Enum.HumanoidStateType.Freefall 
+               or state == Enum.HumanoidStateType.FallingDown 
+               or state == Enum.HumanoidStateType.Ragdoll
+               or state == Enum.HumanoidStateType.Physics then
+                pcall(function()
+                    currentHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    currentHumanoid:ChangeState(Enum.HumanoidStateType.Running)
+                end)
+            end
+
+            local targetPosition = currentPart.Position + (currentPart.CFrame.LookVector * -1.5)
+            currentRoot.CFrame = CFrame.lookAt(targetPosition, currentPart.Position)
+
+            currentRoot.AssemblyLinearVelocity = Vector3.zero
+            currentRoot.AssemblyAngularVelocity = Vector3.zero
+            currentRoot.Velocity = Vector3.zero
+            currentRoot.RotVelocity = Vector3.zero
+
+            pcall(function()
+                currentHumanoid.AutoRotate = false
+                currentHumanoid.PlatformStand = false
+            end)
         end
     end)
 end
 
 local function stopPerfectStick()
     AutoStick = false
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            pcall(function()
+                humanoid.AutoRotate = true
+                humanoid.PlatformStand = false
+            end)
+        end
+    end
 end
 
--- 서버 통신 및 성공 판별
 local function autoCapture(target)
     if not BeginCapture then return end
     CurrentTarget = target
     local part = target.PrimaryPart or target:FindFirstChild("Main")
-    if not part then return end
+    if not part then 
+        CurrentTarget = nil
+        return 
+    end
 
     print("[자동화] 포획 시작:", target.Name)
     TapLabel.Visible = true
@@ -201,7 +399,7 @@ local function autoCapture(target)
     TapLabel.Text = "🎃 캡처 시작 대기... 👻"
 
     startPerfectStick(target)
-    task.wait(0.2)
+    task.wait(0.15)
 
     local successBegin, resultBegin = pcall(function()
         return BeginCapture:InvokeServer(target, "Tap")
@@ -209,7 +407,7 @@ local function autoCapture(target)
 
     if not successBegin or not resultBegin or not resultBegin.Success then
         TapLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-        TapLabel.Text = "💀 BeginCapture 실패!"
+        TapLabel.Text = "💀 BeginCapture 실패! 재시도..."
         stopPerfectStick()
         CurrentTarget = nil
         return
@@ -225,17 +423,25 @@ local function autoCapture(target)
         finalTaps = customTaps
     end
 
+    local tapInterval = GhoulTapIntervals[gModel] or GhoulTapIntervals.Default
+
     for i = 1, finalTaps do
         if not AutoEnabled or not target.Parent then break end
         TapLabel.Text = string.format("🦇 탭 시도: %d / %d", i, finalTaps)
         pcall(function() TapCapture:InvokeServer(target) end)
-        task.wait(TapInterval)
+        task.wait(tapInterval)
+    end
+
+    if not target.Parent then
+        stopPerfectStick()
+        CurrentTarget = nil
+        return
     end
 
     TapLabel.Text = "🕸️ 포획 완료 요청 중..."
     TapLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
     
-    local waitTime = GhoulWaitTimes[gModel] or 0.25
+    local waitTime = GhoulWaitTimes[gModel] or GhoulWaitTimes.Default
     
     TapLabel.Text = string.format("⏳ 대기 중... (%.2f초)", waitTime)
     task.wait(waitTime)
@@ -244,21 +450,25 @@ local function autoCapture(target)
         return CompleteCapture:InvokeServer(target)
     end)
     
-    if successComplete and type(resultComplete) == "table" then
-        if resultComplete.Success == true then
-            TapLabel.TextColor3 = Color3.fromRGB(0, 255, 128)
-            TapLabel.Text = "✅ 진짜 포획 성공! (+"..tostring(resultComplete.Amount or 0).." Skulls)"
+    task.spawn(function()
+        if successComplete and type(resultComplete) == "table" then
+            if resultComplete.Success == true then
+                TapLabel.TextColor3 = Color3.fromRGB(0, 255, 128)
+                TapLabel.Text = "✅ 성공! (+"..tostring(resultComplete.Amount or 0).." Skulls)"
+            else
+                TapLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                TapLabel.Text = "❌ 실패: "..tostring(resultComplete.Error or "재시도")
+            end
         else
-            TapLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
-            TapLabel.Text = "❌ 실패: "..tostring(resultComplete.Error or "알 수 없는 이유")
+            TapLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            TapLabel.Text = "❌ 통신 오류 - 재시도"
         end
-    else
-        TapLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        TapLabel.Text = "❌ 통신 오류"
-    end
+        task.wait(1.5)
+        if not CurrentTarget then
+            TapLabel.Visible = false
+        end
+    end)
     
-    task.wait(2)
-    TapLabel.Visible = false
     stopPerfectStick()
     CurrentTarget = nil
 end
@@ -269,21 +479,24 @@ local function autoLoop()
             local target = getClosestGhoul()
             if target then
                 autoCapture(target)
-                task.wait(0.5)
+                task.wait(0.01)
             else
                 stopPerfectStick()
-                task.wait(0.5)
+                task.wait(0.2)
             end
         end
     end)
 end
 
 ------------------------------------------------
--- UI 구성
+-- 🎃 메인 탭
 ------------------------------------------------
-MainTab:CreateToggle({
-   Name = "🎃 자동 포획 시작 👻",
-   CurrentValue = false,
+local AutoToggle 
+
+AutoToggle = MainTab:CreateToggle({
+   Name = "🎃 자동 포획 시작 / 정지 👻",
+   -- ★ 기본값을 true로 설정
+   CurrentValue = true, 
    Flag = "AutoToggle",
    Callback = function(Value)
        AutoEnabled = Value
@@ -292,139 +505,212 @@ MainTab:CreateToggle({
            Rayfield:Notify({Title = "🎃 시작", Content = "할로윈 자동 포획을 시작합니다.", Duration = 3})
        else 
            stopPerfectStick() 
+           TapLabel.Visible = false
        end
    end,
 })
 
-MainTab:CreateSection("🕸️ 현재 고정 설정")
-MainTab:CreateLabel("탭 속도: 0.5초")
-MainTab:CreateLabel("대기 시간: 0.25초")
-MainTab:CreateLabel("Y축 제한: -150")
+-- ★★★ [추가] 스크립트가 실행되자마자 즉시 자동사냥 루프 시작 ★★★
+task.spawn(function()
+    task.wait(1) -- UI 로딩 대기
+    if AutoEnabled then
+        autoLoop()
+        Rayfield:Notify({Title = "🎃 자동 시작", Content = "스크립트 로드와 동시에 자동 포획이 켜졌습니다.", Duration = 3})
+    end
+end)
+
+MainTab:CreateSection("📊 현재 설정 요약")
+MainTab:CreateLabel("• 파밍할 Ghoul은 '👻 타겟 선택' 탭에서 조절")
+MainTab:CreateLabel("• 탭 횟수, 속도, 대기 시간은 '⚙️ Ghoul 설정' 탭에서 조절")
+MainTab:CreateLabel("• 화면 좌측 상단에 Ghoul 개수 실시간 표시")
+MainTab:CreateLabel("• Y축 제한: -150")
 
 ------------------------------------------------
--- ★ 타겟 순서 설정 탭 (안전장치 강화)
+-- 👻 타겟 선택 탭
 ------------------------------------------------
-PriorityTab:CreateParagraph({
-    Title = "👻 타겟 우선순위 설정",
-    Content = "원하는 Ghoul 순서를 선택하세요.\n먼저 선택한 Ghoul부터 찾아서 잡습니다.\n(예: Ghoul5를 1순위로 선택하면 Ghoul5가 없을 때만 2순위를 찾습니다.)"
+TargetTab:CreateParagraph({
+    Title = "👻 타겟 선택 방식",
+    Content = "아래 두 가지 방식으로 파밍할 Ghoul을 정할 수 있습니다.\n\n① '높은 순서부터 파밍' 스위치로 전체 순서 결정\n   (ON: 5→4→3→2→1 / OFF: 1→2→3→4→5)\n\n② Ghoul별 스위치로 파밍할 Ghoul만 개별 선택"
 })
 
-PriorityTab:CreateDropdown({
-   Name = "1순위 타겟",
-   Options = {"Ghoul1", "Ghoul2", "Ghoul3", "Ghoul4", "Ghoul5"},
-   CurrentOption = {"Ghoul5"},
-   Flag = "Priority1",
-   Callback = function(Option)
-       -- ★ [핵심 수정] Option이 테이블이든 문자열이든 무조건 문자열로 변환
-       local val = Option[1] or Option
-       TargetPriority[1] = tostring(val)
-       print("1순위 변경 ->", TargetPriority[1])
-   end,
-})
-
-PriorityTab:CreateDropdown({
-   Name = "2순위 타겟",
-   Options = {"Ghoul1", "Ghoul2", "Ghoul3", "Ghoul4", "Ghoul5"},
-   CurrentOption = {"Ghoul4"},
-   Flag = "Priority2",
-   Callback = function(Option)
-       local val = Option[1] or Option
-       TargetPriority[2] = tostring(val)
-       print("2순위 변경 ->", TargetPriority[2])
+TargetTab:CreateSection("🔢 파밍 순서")
+TargetTab:CreateToggle({
+   Name = "⬆️ 높은 순서부터 파밍 (Ghoul5 → Ghoul1)",
+   CurrentValue = true,
+   Flag = "HighPriorityFirst",
+   Callback = function(Value)
+       HighPriorityFirst = Value
+       if Value then
+           print("파밍 순서: 높은 순서부터 (5→4→3→2→1)")
+       else
+           print("파밍 순서: 낮은 순서부터 (1→2→3→4→5)")
+       end
    end,
 })
 
-PriorityTab:CreateDropdown({
-   Name = "3순위 타겟",
-   Options = {"Ghoul1", "Ghoul2", "Ghoul3", "Ghoul4", "Ghoul5"},
-   CurrentOption = {"Ghoul3"},
-   Flag = "Priority3",
-   Callback = function(Option)
-       local val = Option[1] or Option
-       TargetPriority[3] = tostring(val)
-       print("3순위 변경 ->", TargetPriority[3])
+TargetTab:CreateSection("👻 파밍할 Ghoul 선택")
+TargetTab:CreateToggle({
+   Name = "Ghoul5 파밍",
+   CurrentValue = true,
+   Flag = "Farm_Ghoul5",
+   Callback = function(Value)
+       GhoulEnabled["Ghoul5"] = Value
+       print("Ghoul5 파밍:", Value and "ON" or "OFF")
    end,
 })
-
-PriorityTab:CreateDropdown({
-   Name = "4순위 타겟",
-   Options = {"Ghoul1", "Ghoul2", "Ghoul3", "Ghoul4", "Ghoul5"},
-   CurrentOption = {"Ghoul2"},
-   Flag = "Priority4",
-   Callback = function(Option)
-       local val = Option[1] or Option
-       TargetPriority[4] = tostring(val)
-       print("4순위 변경 ->", TargetPriority[4])
+TargetTab:CreateToggle({
+   Name = "Ghoul4 파밍",
+   CurrentValue = true,
+   Flag = "Farm_Ghoul4",
+   Callback = function(Value)
+       GhoulEnabled["Ghoul4"] = Value
+       print("Ghoul4 파밍:", Value and "ON" or "OFF")
    end,
 })
-
-PriorityTab:CreateDropdown({
-   Name = "5순위 타겟",
-   Options = {"Ghoul1", "Ghoul2", "Ghoul3", "Ghoul4", "Ghoul5"},
-   CurrentOption = {"Ghoul1"},
-   Flag = "Priority5",
-   Callback = function(Option)
-       local val = Option[1] or Option
-       TargetPriority[5] = tostring(val)
-       print("5순위 변경 ->", TargetPriority[5])
+TargetTab:CreateToggle({
+   Name = "Ghoul3 파밍",
+   CurrentValue = true,
+   Flag = "Farm_Ghoul3",
+   Callback = function(Value)
+       GhoulEnabled["Ghoul3"] = Value
+       print("Ghoul3 파밍:", Value and "ON" or "OFF")
    end,
 })
-
-------------------------------------------------
--- ★ 탭 횟수 설정 탭
-------------------------------------------------
-TapCountTab:CreateInput({
-   Name = "Ghoul1 탭 횟수", PlaceholderText = "예: 12", Flag = "TapCount_Ghoul1", RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-       local num = tonumber(Text)
-       if num and num >= 0 then GhoulTapCounts["Ghoul1"] = num end
+TargetTab:CreateToggle({
+   Name = "Ghoul2 파밍",
+   CurrentValue = true,
+   Flag = "Farm_Ghoul2",
+   Callback = function(Value)
+       GhoulEnabled["Ghoul2"] = Value
+       print("Ghoul2 파밍:", Value and "ON" or "OFF")
    end,
 })
-TapCountTab:CreateInput({
-   Name = "Ghoul2 탭 횟수", PlaceholderText = "예: 19", Flag = "TapCount_Ghoul2", RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-       local num = tonumber(Text)
-       if num and num >= 0 then GhoulTapCounts["Ghoul2"] = num end
-   end,
-})
-TapCountTab:CreateInput({
-   Name = "Ghoul3 탭 횟수", PlaceholderText = "예: 12", Flag = "TapCount_Ghoul3", RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-       local num = tonumber(Text)
-       if num and num >= 0 then GhoulTapCounts["Ghoul3"] = num end
-   end,
-})
-TapCountTab:CreateInput({
-   Name = "Ghoul4 탭 횟수", PlaceholderText = "예: 17", Flag = "TapCount_Ghoul4", RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-       local num = tonumber(Text)
-       if num and num >= 0 then GhoulTapCounts["Ghoul4"] = num end
-   end,
-})
-TapCountTab:CreateInput({
-   Name = "Ghoul5 탭 횟수", PlaceholderText = "예: 20", Flag = "TapCount_Ghoul5", RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-       local num = tonumber(Text)
-       if num and num >= 0 then GhoulTapCounts["Ghoul5"] = num end
+TargetTab:CreateToggle({
+   Name = "Ghoul1 파밍",
+   CurrentValue = true,
+   Flag = "Farm_Ghoul1",
+   Callback = function(Value)
+       GhoulEnabled["Ghoul1"] = Value
+       print("Ghoul1 파밍:", Value and "ON" or "OFF")
    end,
 })
 
 ------------------------------------------------
--- ★ 정보 탭
+-- ⚙️ Ghoul 설정 탭
+------------------------------------------------
+GhoulTab:CreateParagraph({
+    Title = "⚙️ Ghoul별 상세 설정",
+    Content = "각 Ghoul마다 아래 3가지를 키보드로 입력하세요.\n• 탭 횟수\n• 탭 간격 (0.05 ~ 2.0초)\n• 대기 시간 (0.05 ~ 2.0초)\n\n⚠️ 입력 후 Enter를 누르면 적용됩니다."
+})
+
+local function createGhoulSection(ghoulName)
+    GhoulTab:CreateSection("👻 " .. ghoulName)
+
+    GhoulTab:CreateInput({
+       Name = "탭 횟수",
+       PlaceholderText = "예: 12",
+       CurrentValue = tostring(GhoulTapCounts[ghoulName]),
+       RemoveTextAfterFocusLost = false,
+       Flag = "TapCount_" .. ghoulName,
+       Callback = function(Text)
+           local num = tonumber(Text)
+           if num and num >= 0 then
+               GhoulTapCounts[ghoulName] = num
+               print(string.format("%s 탭 횟수 -> %d", ghoulName, num))
+           end
+       end,
+    })
+
+    GhoulTab:CreateInput({
+       Name = "탭 간격 (초)",
+       PlaceholderText = "0.05 ~ 2.0 (예: 0.5)",
+       CurrentValue = tostring(GhoulTapIntervals[ghoulName]),
+       RemoveTextAfterFocusLost = false,
+       Flag = "TapIntervalInput_" .. ghoulName,
+       Callback = function(Text)
+           local num = clampSpeed(Text)
+           if num then
+               GhoulTapIntervals[ghoulName] = num
+               print(string.format("%s 탭 간격 -> %.2f초", ghoulName, num))
+           else
+               Rayfield:Notify({Title = "⚠️ 잘못된 값", Content = "0.05 ~ 2.0 사이 숫자를 입력하세요.", Duration = 3})
+           end
+       end,
+    })
+
+    GhoulTab:CreateInput({
+       Name = "대기 시간 (초)",
+       PlaceholderText = "0.05 ~ 2.0 (예: 0.25)",
+       CurrentValue = tostring(GhoulWaitTimes[ghoulName]),
+       RemoveTextAfterFocusLost = false,
+       Flag = "WaitTimeInput_" .. ghoulName,
+       Callback = function(Text)
+           local num = clampSpeed(Text)
+           if num then
+               GhoulWaitTimes[ghoulName] = num
+               print(string.format("%s 대기 시간 -> %.2f초", ghoulName, num))
+           else
+               Rayfield:Notify({Title = "⚠️ 잘못된 값", Content = "0.05 ~ 2.0 사이 숫자를 입력하세요.", Duration = 3})
+           end
+       end,
+    })
+end
+
+createGhoulSection("Ghoul1")
+createGhoulSection("Ghoul2")
+createGhoulSection("Ghoul3")
+createGhoulSection("Ghoul4")
+createGhoulSection("Ghoul5")
+
+------------------------------------------------
+-- ℹ️ 정보 탭
 ------------------------------------------------
 InfoTab:CreateParagraph({
     Title = "🎃 Happy Halloween! 👻",
-    Content = "1. 유령을 찾아 자석처럼 붙습니다.\n2. 서버와 직접 통신하여 포획합니다.\n3. 20분 AFK 튕김을 방지합니다.\n4. 탭 횟수는 '탭 횟수 설정' 탭에서 변경 가능합니다.\n5. 타겟 순서는 '타겟 순서 설정' 탭에서 변경 가능합니다.\n\n🕸️ 즐거운 할로윈 되세요! 🕸️"
+    Content = "📌 사용 방법\n1. '👻 타겟 선택'에서 파밍할 Ghoul과 순서 결정\n2. '⚙️ Ghoul 설정'에서 탭 횟수/속도 조절\n3. '🎃 메인'에서 자동 포획 시작\n\n⚡ 타겟 선택 방식\n• '높은 순서부터 파밍' 스위치: 전체 순서 결정\n• Ghoul별 스위치: 파밍할 Ghoul만 개별 선택\n• 상위 Ghoul이 없으면 자동으로 다음 순위 탐색\n\n👻 Ghoul 현황\n• 화면 좌측 상단에 실시간 개수 표시\n• 0.5초마다 자동 갱신\n• 초록색 = 있음 / 빨간색 = 없음\n\n🎯 자석 시스템\n• Ghoul에 완전 고정 (물리 무시)\n• 넘어져도 즉시 복구\n• 포획 후 즉시 다음 Ghoul로 이동\n\n🕸️ 즐거운 할로윈 되세요!"
 })
 
 -- 툴 자동 장착
-task.spawn(function()
-    task.wait(1)
+local function equipTool()
     if EquipRF then
         pcall(function()
             EquipRF:InvokeServer("9e29c08b-1cb6-46c5-9458-6fb10bb625e1")
             print("✅ 툴 자동 장착 성공!")
         end)
+    end
+end
+
+task.spawn(function()
+    task.wait(1)
+    equipTool()
+end)
+
+-- ★★★ [추가] 텔레포트(서버 이동) 감지 시 자동사냥 재시작 ★★★
+LocalPlayer.OnTeleport:Connect(function(State)
+    if State == Enum.TeleportState.Started then
+        print("🔄 서버 이동(텔레포트) 시작 감지...")
+    elseif State == Enum.TeleportState.InProgress then
+        print("🔄 새 서버로 이동 중...")
+    end
+end)
+
+TeleportService.LocalPlayerArrivedFromTeleport:Connect(function()
+    print("🔄 새 서버 도착! 자동사냥 재시작...")
+    task.wait(3) -- 새 서버 로딩 대기
+    equipTool()
+    if AutoEnabled then
+        autoLoop()
+        Rayfield:Notify({Title = "🔄 서버 이동 감지", Content = "새 서버에서 자동 포획이 다시 시작되었습니다!", Duration = 3})
+    end
+end)
+
+-- ★★★ [추가] 캐릭터 리스폰(사망 후 부활) 시 재시작 ★★★
+LocalPlayer.CharacterAdded:Connect(function(character)
+    print("🔄 캐릭터 리스폰 감지됨...")
+    task.wait(2)
+    equipTool()
+    if AutoEnabled then
+        autoLoop()
     end
 end)
 
